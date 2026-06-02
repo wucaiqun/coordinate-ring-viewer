@@ -1,0 +1,11 @@
+[package]
+name = "geo-ring-viewer"
+version = "0.1.0"
+edition = "2021"
+description = "Visualize 2D/3D geo coordinates and rings"
+
+[dependencies]
+eframe = "0.31"
+egui = "0.31"
+egui_plot = "0.31"
+rfd = "0.15"
