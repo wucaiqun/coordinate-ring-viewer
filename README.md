@@ -2,6 +2,8 @@
 
 Desktop tool to visualize 2D/3D latitude/longitude rings. Coordinates can be typed in the UI or **imported from text files**.
 
+![Geo Ring Viewer screenshot](assets/GeoRingView.png)
+
 ## AI and authorship
 
 This project idea, feature direction, and product goals are mine.
