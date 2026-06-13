@@ -64,4 +64,4 @@ After import, click **Draw** if the plot does not update automatically (import a
 ## Views
 
 - **2D**: scroll to zoom, drag to pan, double-click to reset zoom
-- **3D**: drag to rotate, scroll to zoom, Shift+drag to pan
+- **3D**: left-drag pan, right-drag rotate, scroll at cursor to zoom, click a point to show lon/lat/altitude, double-click to reset view
