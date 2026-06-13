@@ -1,8 +1,8 @@
-use egui::{Color32, RichText, Ui};
+use egui::{Align2, Color32, RichText, Ui};
 
 const VIEW_CAPTION_SIZE: f32 = 14.0;
 const TEXT_PRIMARY: Color32 = Color32::from_rgb(235, 235, 235);
-use egui_plot::{Legend, Line, Plot, PlotPoints, Points, Polygon};
+use egui_plot::{Legend, Line, Plot, PlotPoint, PlotPoints, Points, Polygon, Text};
 use crate::parser::{ParseResult2D, Ring2D};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,6 +98,15 @@ fn draw_ring_2d(
                         .color(Color32::WHITE)
                         .name("Selected point"),
                 );
+                plot_ui.text(
+                    Text::new(
+                        PlotPoint::new(point.lon, point.lat),
+                        format_coord_2d(point.lon, point.lat),
+                    )
+                    .color(Color32::WHITE)
+                    .anchor(Align2::LEFT_BOTTOM)
+                    .highlight(true),
+                );
             }
         }
     }
@@ -143,4 +152,8 @@ fn find_nearest_point_2d(data: &ParseResult2D, lon: f64, lat: f64) -> Option<Pic
         }
     }
     best.map(|(picked, _)| picked)
+}
+
+fn format_coord_2d(lon: f64, lat: f64) -> String {
+    format!("{lon:.6} {lat:.6}")
 }

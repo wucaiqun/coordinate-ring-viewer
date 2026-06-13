@@ -4,7 +4,7 @@ use eframe::egui::{self, text::{CCursor, CCursorRange, LayoutJob, TextFormat}, C
 use crate::import::{format_import_status, merge_files, pick_coordinate_files, EXAMPLES_SAMPLE_PATHS};
 use crate::parser::{parse_2d, parse_3d, ParseResult2D, ParseResult3D};
 use crate::viewer2d::{show_2d_view, PickedPoint2D};
-use crate::viewer3d::{show_3d_view, OrbitCamera, PickedPoint3D};
+use crate::viewer3d::{build_local_scene, show_3d_view, LocalScene3D, OrbitCamera, PickedPoint3D};
 
 /// Primary labels and section titles.
 const TEXT_PRIMARY: Color32 = Color32::from_rgb(235, 235, 235);
@@ -73,6 +73,8 @@ pub struct GeoApp {
     selected_3d: Option<PickedPoint3D>,
     last_scrolled_2d: Option<PickedPoint2D>,
     last_scrolled_3d: Option<PickedPoint3D>,
+    scene_3d: LocalScene3D,
+    coord_input_focused: bool,
 }
 
 impl GeoApp {
@@ -93,6 +95,8 @@ impl GeoApp {
             selected_3d: None,
             last_scrolled_2d: None,
             last_scrolled_3d: None,
+            scene_3d: LocalScene3D::default(),
+            coord_input_focused: false,
         };
         app.camera.reset();
         app
@@ -101,6 +105,7 @@ impl GeoApp {
     fn refresh(&mut self) {
         self.parsed_2d = parse_2d(&self.input_2d);
         self.parsed_3d = parse_3d(&self.input_3d);
+        self.scene_3d = build_local_scene(&self.parsed_3d);
         self.show_errors =
             !self.parsed_2d.errors.is_empty() || !self.parsed_3d.errors.is_empty();
     }
@@ -175,15 +180,6 @@ impl eframe::App for GeoApp {
                         .color(TEXT_MUTED)
                         .size(FONT_BODY),
                 );
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui
-                        .add(egui::Button::new(RichText::new("Draw").strong()).min_size(egui::vec2(72.0, 28.0)))
-                        .clicked()
-                    {
-                        self.refresh();
-                        self.set_status("Plot updated.".to_string(), false);
-                    }
-                });
             });
             ui.add_space(6.0);
         });
@@ -193,14 +189,17 @@ impl eframe::App for GeoApp {
             .default_width(420.0)
             .min_width(320.0)
             .show(ctx, |ui| {
+                self.coord_input_focused = false;
                 ui.add_space(8.0);
                 ui.label(section_title("Coordinates"));
                 ui.label(hint_faint(format!("Sample files: {EXAMPLES_SAMPLE_PATHS}")));
                 ui.add_space(6.0);
 
-                if ui.button("Clear all inputs").clicked() {
-                    self.clear_inputs(ctx);
-                }
+                ui.horizontal(|ui| {
+                    if ui.button("Clear all inputs").clicked() {
+                        self.clear_inputs(ctx);
+                    }
+                });
 
                 if let Some(msg) = &self.status_message {
                     let color = if self.status_is_error {
@@ -231,14 +230,24 @@ impl eframe::App for GeoApp {
                         let selected_line_2d = selected_line_for_2d(&self.input_2d, self.selected_2d);
                         let input_id_2d = egui::Id::new("input_2d").with(self.input_revision);
                         let should_scroll_2d = self.selected_2d != self.last_scrolled_2d;
-                        let mut layouter = make_line_highlight_layouter(selected_line_2d);
-                        let mut output = TextEdit::multiline(&mut self.input_2d)
-                            .id(input_id_2d)
-                            .font(egui::TextStyle::Monospace)
-                            .desired_width(f32::INFINITY)
-                            .desired_rows(10)
-                            .layouter(&mut layouter)
-                            .show(ui);
+                        let mut output = if let Some(line_idx) = selected_line_2d {
+                            let mut layouter = make_line_highlight_layouter(Some(line_idx));
+                            TextEdit::multiline(&mut self.input_2d)
+                                .id(input_id_2d)
+                                .font(egui::TextStyle::Monospace)
+                                .desired_width(f32::INFINITY)
+                                .desired_rows(10)
+                                .layouter(&mut layouter)
+                                .show(ui)
+                        } else {
+                            TextEdit::multiline(&mut self.input_2d)
+                                .id(input_id_2d)
+                                .font(egui::TextStyle::Monospace)
+                                .desired_width(f32::INFINITY)
+                                .desired_rows(10)
+                                .show(ui)
+                        };
+                        self.coord_input_focused |= output.response.has_focus();
                         if should_scroll_2d {
                             if let Some(line_idx) = selected_line_2d {
                                 let char_index = char_index_for_line(&self.input_2d, line_idx);
@@ -260,7 +269,22 @@ impl eframe::App for GeoApp {
                     });
 
                 ui.add_space(12.0);
-                ui.label(section_title("3D - lon lat altitude (m)"));
+                ui.horizontal(|ui| {
+                    ui.label(section_title("3D - lon lat altitude (m)"));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui
+                            .add(
+                                egui::Button::new(RichText::new("Draw").strong())
+                                    .min_size(egui::vec2(72.0, 28.0)),
+                            )
+                            .clicked()
+                        {
+                            self.refresh();
+                            self.set_status("Plot updated.".to_string(), false);
+                            ctx.request_repaint();
+                        }
+                    });
+                });
                 ui.horizontal_wrapped(|ui| {
                     if ui.button("Import 3D from file(s)...").clicked() {
                         self.import_from_files(CoordDimension::Dim3D, ctx);
@@ -274,14 +298,24 @@ impl eframe::App for GeoApp {
                         let selected_line_3d = selected_line_for_3d(&self.input_3d, self.selected_3d);
                         let input_id_3d = egui::Id::new("input_3d").with(self.input_revision);
                         let should_scroll_3d = self.selected_3d != self.last_scrolled_3d;
-                        let mut layouter = make_line_highlight_layouter(selected_line_3d);
-                        let mut output = TextEdit::multiline(&mut self.input_3d)
-                            .id(input_id_3d)
-                            .font(egui::TextStyle::Monospace)
-                            .desired_width(f32::INFINITY)
-                            .desired_rows(10)
-                            .layouter(&mut layouter)
-                            .show(ui);
+                        let mut output = if let Some(line_idx) = selected_line_3d {
+                            let mut layouter = make_line_highlight_layouter(Some(line_idx));
+                            TextEdit::multiline(&mut self.input_3d)
+                                .id(input_id_3d)
+                                .font(egui::TextStyle::Monospace)
+                                .desired_width(f32::INFINITY)
+                                .desired_rows(10)
+                                .layouter(&mut layouter)
+                                .show(ui)
+                        } else {
+                            TextEdit::multiline(&mut self.input_3d)
+                                .id(input_id_3d)
+                                .font(egui::TextStyle::Monospace)
+                                .desired_width(f32::INFINITY)
+                                .desired_rows(10)
+                                .show(ui)
+                        };
+                        self.coord_input_focused |= output.response.has_focus();
                         if should_scroll_3d {
                             if let Some(line_idx) = selected_line_3d {
                                 let char_index = char_index_for_line(&self.input_3d, line_idx);
@@ -371,9 +405,11 @@ impl eframe::App for GeoApp {
                             show_3d_view(
                                 ui,
                                 &self.parsed_3d,
+                                &self.scene_3d,
                                 &mut self.camera,
                                 self.selected_3d,
                                 &mut picked,
+                                !self.coord_input_focused,
                             );
                             if let Some(picked) = picked {
                                 self.selected_3d = Some(picked);
@@ -401,9 +437,11 @@ impl eframe::App for GeoApp {
                     show_3d_view(
                         ui,
                         &self.parsed_3d,
+                        &self.scene_3d,
                         &mut self.camera,
                         self.selected_3d,
                         &mut picked,
+                        !self.coord_input_focused,
                     );
                     if let Some(picked) = picked {
                         self.selected_3d = Some(picked);
